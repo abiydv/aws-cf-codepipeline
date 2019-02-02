@@ -1,0 +1,424 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  Project:
+    Type: String
+    Default: "PROJECT"          # Replace with your custom project name
+
+  GitHubRepo:
+    Type: String
+    Default: "GITHUBREPO"        # Replace with your github repo name
+
+  GitHubBranch:
+    Type: String
+    Default: "GITHUBBRANCH"      # Replace with your github branch name, changes to which will trigger the pipeline
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Default: "GITHUBTOKEN"       # Replace with your github oauth token
+    
+  GitHubUser:
+    Type: String
+    Default: "GITHUBUSER"        # Replace with your github username
+  
+  BaseStackName:
+    Type: String
+    Default: "codepipeline-base-stack"
+
+  Email:
+    Type: String
+    Default: "NOTIFY@EXAMPLE.COM"   # Replace with an email where pipeline/build state notifications will be sent
+
+  ApproverEmail:
+    Type: String
+    Default: "APPROVE@EXAMPLE.COM"  # Replace with an email where approval notifications will be sent
+
+Mappings: 
+  Account:
+    tools:
+      id: "112233445566"  # Replace with your aws tools account id
+    dev:
+      id: "112233445577"  # Replace with your aws dev account id
+    qa:
+      id: "112233445588"  # Replace with your aws qa account id
+    prod:
+      id: "112233445599"  # Replace with your aws prod account id
+
+Resources:
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Main
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: "*"
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                  - sns:Publish*
+              - Resource: 
+                  !Join [ '', [ "Fn::ImportValue" : { "Fn::Sub": '${BaseStackName}:ArtifactBucketArn' }, '/*' ]]
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetObjectVersion
+              - Resource: 
+                  Fn::ImportValue: !Sub "${BaseStackName}:RepositoryArn"
+                Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Main
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource:
+                  !Join [ '', [ "Fn::ImportValue" : { "Fn::Sub": '${BaseStackName}:ArtifactBucketArn' }, '/*' ]]
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+              - Resource: "*"
+                Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:ListTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - iam:PassRole
+                  - sts:AssumeRole
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                  - sns:Publish*
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Join [ "-", [ "cb", !Ref Project, "build", "project" ] ]
+      ServiceRole: !Ref CodeBuildServiceRole
+      EncryptionKey:
+        Fn::ImportValue: !Sub "${BaseStackName}:KMSKeyArn"
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                 - $(aws ecr get-login --no-include-email)
+                 - TAG="$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 10)"
+                 - IMAGE_URI="${REPOSITORY_URI}:${TAG}"
+            build:
+              commands:         
+                - docker build --tag "$IMAGE_URI" .
+                - docker run -d -p 80:80 "$IMAGE_URI"
+                - sleep 40
+                - HTTPCODE=`curl -s -o /dev/null -w "%{http_code}" localhost`
+                - |
+                   if expr "${HTTPCODE}" : 200; then
+                     echo HTTP code is ${HTTPCODE}
+                     echo Image runs fine;
+                   else
+                     echo Image did not run;
+                     exit
+                   fi
+                - docker push "$IMAGE_URI"
+                - printf '[{"name":"container","imageUri":"%s"}]' "$IMAGE_URI" > imagedefinitions.json
+          artifacts:
+            files: imagedefinitions.json
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/docker:17.09.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: REPOSITORY_URI
+            Value: !Join [ "", [ "Fn::Sub": '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/', "Fn::ImportValue": { "Fn::Sub": '${BaseStackName}:Repository' }]]
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Join [ "-", [ "cp", !Ref Project, "codepipeline" ] ]
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: 
+          Fn::ImportValue: !Sub "${BaseStackName}:ArtifactBucket"
+        EncryptionKey:
+          Id: 
+            Fn::ImportValue: !Sub "${BaseStackName}:KMSKey"
+          Type: KMS
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              Configuration:
+                Owner: !Ref GitHubUser
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubToken
+              OutputArtifacts:
+                - Name: Source
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts:
+                - Name: Build
+              RunOrder: 1
+        - Name: DevDeploy
+          Actions:
+            - Name: DevDeploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: dev-cluster
+                ServiceName: dev_service
+                FileName: imagedefinitions.json
+              InputArtifacts:
+                - Name: Build
+              RunOrder: 1
+              RoleArn: !Join [':',["arn:aws:iam:", !FindInMap [Account,dev,id], "role/PipelineCrossAccountRole"]]
+        - Name: ApproveQADeploy
+          Actions:
+            - Name: ApproveQADeploy
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration: 
+                NotificationArn: !Ref SNSApproveTopic
+                CustomData: "Approve Deployment to QA"
+              RunOrder: 1      
+        - Name: QADeploy
+          Actions:
+            - Name: QADeploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: qa-cluster
+                ServiceName: qa_service
+                FileName: imagedefinitions.json
+              InputArtifacts:
+                - Name: Build
+              RunOrder: 1
+              RoleArn: !Join [':',["arn:aws:iam:", !FindInMap [Account,qa,id], "role/PipelineCrossAccountRole"]]
+        - Name: ApproveProdDeploy
+          Actions:
+            - Name: ApproveProdDeploy
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration: 
+                NotificationArn: !Ref SNSApproveTopic
+                CustomData: "Approve Deployment to Prod"
+              RunOrder: 1 
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: prod-cluster
+                ServiceName: prod_service
+                FileName: imagedefinitions.json
+              InputArtifacts:
+                - Name: Build
+              RunOrder: 1
+              RoleArn: !Join [':',["arn:aws:iam:", !FindInMap [Account,prod,id], "role/PipelineCrossAccountRole"]]
+
+  SNSNotifyTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: "AWS-Tools"
+      Subscription:
+        - 
+          Endpoint: !Ref Email
+          Protocol: email 
+      TopicName: !Sub sns-${Project}-notify
+
+  SNSNotifyTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SNSNotifyTopic
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+        - Resource: !Ref SNSNotifyTopic
+          Effect: Allow
+          Principal:
+            AWS: !Ref AWS::AccountId
+          Action:
+            - sns:GetTopicAttributes
+            - sns:SetTopicAttributes
+            - sns:AddPermission
+            - sns:RemovePermission
+            - sns:Subscribe
+            - sns:Publish
+            - sns:Receive
+            - sns:ListSubscriptionsByTopic
+
+  SNSApproveTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: "AWS-Tools"
+      Subscription:
+        - 
+          Endpoint: !Ref ApproverEmail
+          Protocol: email 
+      TopicName: !Sub sns-${Project}-approve
+
+  SNSApproveTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SNSApproveTopic
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+        - Resource: !Ref SNSApproveTopic
+          Effect: Allow
+          Principal:
+            AWS: !Ref AWS::AccountId
+          Action:
+            - sns:GetTopicAttributes
+            - sns:SetTopicAttributes
+            - sns:AddPermission
+            - sns:RemovePermission
+            - sns:Subscribe
+            - sns:Publish
+            - sns:Receive
+            - sns:ListSubscriptionsByTopic
+
+  PipelineEvent:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Notify on codepipeline STATE change"
+      Name: !Sub "cwe-${Project}-codepipeline-event-rule"
+      EventPattern:
+          source:
+              - aws.codepipeline
+          detail-type:
+              - 'CodePipeline Pipeline Execution State Change'
+          detail:
+              pipeline: [ !Ref Pipeline ]
+
+      State: ENABLED 
+      Targets:
+        - Arn: !Ref SNSNotifyTopic
+          Id: eventTarget
+          InputTransformer:
+            InputPathsMap:
+              pipeline: $.detail.pipeline
+              executionid: $.detail.execution-id
+              tm: $.time
+              state: $.detail.state
+            InputTemplate: "\"<pipeline> <state> at <tm> ExecutionId <executionid>\""
+
+  BuildEvent:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Notify on codepipeline STATE change"
+      Name: !Sub "cwe-${Project}-codebuild-event-rule"
+      EventPattern:
+          source:
+              - aws.codebuild
+          detail-type:
+              - 'CodeBuild Build State Change'
+          detail:
+              project-name: [ !Ref CodeBuildProject ]
+
+      State: ENABLED 
+      Targets:
+        - Arn: !Ref SNSNotifyTopic
+          Id: eventTarget
+          InputTransformer:
+            InputPathsMap:
+              project: $.detail.project-name
+              buildid: $.detail.build-id
+              tm: $.time
+              status: $.detail.build-status
+            InputTemplate: "\"<project> <status> at <tm> BuildId <buildid>\""
+
+Outputs:
+  PipelineUrl:
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${Pipeline}
