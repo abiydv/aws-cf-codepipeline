@@ -1,0 +1,174 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  Project:
+    Type: String
+    Default: "PROJECT"   # Replace with your custom project name
+  
+  PullAccounts:
+    Type: CommaDelimitedList
+    Default: "arn:aws:iam::DEV_ACCOUNT_ID:root,arn:aws:iam::QA_ACCOUNT_ID:root, arn:aws:iam::PROD_ACCOUNT_ID:root" 
+    # Enter the account ids where the ECS clusters will be.
+
+  KMSAdmin:
+    Type: String
+    Default: "IAM_USER_ARN"  # Replace with ARN of an IAM user who should have administrative rights on the key
+
+Resources:
+  KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "KMS Key for use with codepipeline"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: !Join [ "-", [ "kms", !Ref Project, "codepipeline","key" ] ]
+        Statement:
+          -
+            Sid: "AllowAdmin"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref KMSAdmin
+            Action:
+              - "kms:*"
+            Resource: "*"
+          -
+            Sid: "AllowAccount"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+          -
+            Sid: "AllowOthers"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref PullAccounts
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Join [ "-", [ "s3", !Ref Project, "artifacts","bucket" ] ]
+      VersioningConfiguration: {"Status": "Enabled"}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          -
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref KMSKey
+
+  ArtifactBucketPolicy:
+      DependsOn: ArtifactBucket
+      Type: "AWS::S3::BucketPolicy"
+      Properties:
+        Bucket:
+          !Ref ArtifactBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          -
+            Sid: AllowAccess
+            Action:
+              - s3:Get*
+              - s3:Put*
+              - s3:ListBucket
+            Effect: Allow
+            Resource: 
+              - !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket',"/*"]]
+              - !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket']]
+            Principal:
+              AWS: !Ref PullAccounts
+          -
+            Sid: DenyUnencryptedObjectUploads
+            Action:
+              s3:PutObject
+            Effect: Deny
+            Resource: !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket',"/*"]]
+            Principal: '*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: "aws:kms"
+          -
+            Sid: DenyInsecureConnections
+            Action:
+              - s3:*
+            Effect: Deny
+            Resource: !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket',"/*"]]
+            Principal: '*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  Repository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    Properties: 
+      RepositoryName: !Join [ "-", [ "ecr", !Ref Project, "repository" ]]
+      RepositoryPolicyText: 
+        Version: 2012-10-17
+        Statement:
+          -
+            Sid: AllowAll
+            Effect: Allow
+            Principal: 
+              AWS:
+                -  !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+               - "ecr:*"
+          -
+            Sid: AllowPull
+            Effect: Allow
+            Principal:
+              AWS: !Ref PullAccounts
+            Action:
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:BatchGetImage"
+              - "ecr:DescribeImages"
+              - "ecr:GetAuthorizationToken"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:ListImages"
+
+Outputs:
+  ArtifactBucketArn:
+    Value: !GetAtt ArtifactBucket.Arn
+    Export: 
+      Name: !Join [ ":", [ !Ref "AWS::StackName", ArtifactBucketArn ]]
+
+  ArtifactBucket:
+    Value: !Ref ArtifactBucket
+    Export: 
+      Name: !Join [ ":", [ !Ref "AWS::StackName", ArtifactBucket ]]
+
+  RepositoryArn:
+    Value: !GetAtt Repository.Arn
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", RepositoryArn ]]
+  
+  Repository:
+    Value: !Ref Repository
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", Repository ]]
+
+  KMSKeyArn:
+    Value: !GetAtt KMSKey.Arn
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", KMSKeyArn ]]
+
+  KMSKey:
+    Value: !Ref KMSKey
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", KMSKey ]]
