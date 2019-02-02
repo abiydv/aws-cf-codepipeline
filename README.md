@@ -1,4 +1,6 @@
 # AWS Cross Account Codepipeline
+![cli](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cli_small.png)
+![cf](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cf_small.png)
 ![github](https://github.com/abiydv/ref-docs/blob/master/images/logos/github_small.png)
 ![cp](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cp_small.png)
 ![cb](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cb_small.png)
