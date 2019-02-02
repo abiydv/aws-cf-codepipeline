@@ -1,11 +1,22 @@
 # AWS Cross Account Codepipeline
+![github](https://github.com/abiydv/ref-docs/blob/master/images/logos/github_small.png)
+![cp](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cp_small.png)
+![cb](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cb_small.png)
+![ecr](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-ecr_small.png)
+![iam](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-iamrole_small.png)
+![sns](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-sns_small.png)
+![s3](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-s3_small.png)
+![kms](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-kms_small.png)
+![cwe](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cwevent_small.png)
+![ecsf](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-ecs-fargate_small.png)
+
 Use this to create a cross account AWS Codepipeline which runs in a dedicated account and deploys artifacts in other accounts
 
 - Source - github
 - Buid - AWS CodeBuild
 - Deploy - AWS Codepipeline ECS deployment
 
-![cross-account-pipeline](./images/cross-account-code-pipeline.png)
+![cross-account-pipeline](https://github.com/abiydv/ref-docs/blob/master/images/arch/cross-account-code-pipeline.png)
 
 ## How to use
 To create the ECS clusters in the respective accounts, you can use the [ecs templates](../ecs/). To setup the cross account codepipeline, follow these steps - 
