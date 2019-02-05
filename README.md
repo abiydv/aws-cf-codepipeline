@@ -1,4 +1,6 @@
 # AWS Cross Account Codepipeline
+[![CodeFactor](https://www.codefactor.io/repository/github/abiydv/aws-cf-codepipeline/badge)](https://www.codefactor.io/repository/github/abiydv/aws-cf-codepipeline)
+
 ![cli](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cli_small.png)
 ![cf](https://github.com/abiydv/ref-docs/blob/master/images/logos/aws-cf_small.png)
 ![github](https://github.com/abiydv/ref-docs/blob/master/images/logos/github_small.png)
