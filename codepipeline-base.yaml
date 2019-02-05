@@ -5,10 +5,10 @@ Parameters:
   Project:
     Type: String
     Default: "PROJECT"   # Replace with your custom project name
-  
+
   PullAccounts:
     Type: CommaDelimitedList
-    Default: "arn:aws:iam::DEV_ACCOUNT_ID:root,arn:aws:iam::QA_ACCOUNT_ID:root, arn:aws:iam::PROD_ACCOUNT_ID:root" 
+    Default: "arn:aws:iam::DEV_ACCOUNT_ID:root,arn:aws:iam::QA_ACCOUNT_ID:root, arn:aws:iam::PROD_ACCOUNT_ID:root"
     # Enter the account ids where the ECS clusters will be.
 
   KMSAdmin:
@@ -87,7 +87,7 @@ Resources:
               - s3:Put*
               - s3:ListBucket
             Effect: Allow
-            Resource: 
+            Resource:
               - !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket',"/*"]]
               - !Join ["",["arn:aws:s3:::",!Ref 'ArtifactBucket']]
             Principal:
@@ -116,15 +116,15 @@ Resources:
   Repository:
     Type: AWS::ECR::Repository
     DeletionPolicy: Retain
-    Properties: 
+    Properties:
       RepositoryName: !Join [ "-", [ "ecr", !Ref Project, "repository" ]]
-      RepositoryPolicyText: 
+      RepositoryPolicyText:
         Version: 2012-10-17
         Statement:
           -
             Sid: AllowAll
             Effect: Allow
-            Principal: 
+            Principal:
               AWS:
                 -  !Sub "arn:aws:iam::${AWS::AccountId}:root"
             Action:
@@ -145,19 +145,19 @@ Resources:
 Outputs:
   ArtifactBucketArn:
     Value: !GetAtt ArtifactBucket.Arn
-    Export: 
+    Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", ArtifactBucketArn ]]
 
   ArtifactBucket:
     Value: !Ref ArtifactBucket
-    Export: 
+    Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", ArtifactBucket ]]
 
   RepositoryArn:
     Value: !GetAtt Repository.Arn
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", RepositoryArn ]]
-  
+
   Repository:
     Value: !Ref Repository
     Export:
