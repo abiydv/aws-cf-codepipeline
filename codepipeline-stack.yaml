@@ -18,11 +18,11 @@ Parameters:
     Type: String
     NoEcho: true
     Default: "GITHUBTOKEN"       # Replace with your github oauth token
-    
+
   GitHubUser:
     Type: String
     Default: "GITHUBUSER"        # Replace with your github username
-  
+
   BaseStackName:
     Type: String
     Default: "codepipeline-base-stack"
@@ -35,7 +35,7 @@ Parameters:
     Type: String
     Default: "APPROVE@EXAMPLE.COM"  # Replace with an email where approval notifications will be sent
 
-Mappings: 
+Mappings:
   Account:
     tools:
       id: "112233445566"  # Replace with your aws tools account id
@@ -77,14 +77,14 @@ Resources:
                   - kms:GenerateDataKey*
                   - kms:DescribeKey
                   - sns:Publish*
-              - Resource: 
+              - Resource:
                   !Join [ '', [ "Fn::ImportValue" : { "Fn::Sub": '${BaseStackName}:ArtifactBucketArn' }, '/*' ]]
                 Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:GetObjectVersion
-              - Resource: 
+              - Resource:
                   Fn::ImportValue: !Sub "${BaseStackName}:RepositoryArn"
                 Effect: Allow
                 Action:
@@ -160,7 +160,7 @@ Resources:
                  - TAG="$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 10)"
                  - IMAGE_URI="${REPOSITORY_URI}:${TAG}"
             build:
-              commands:         
+              commands:
                 - docker build --tag "$IMAGE_URI" .
                 - docker run -d -p 80:80 "$IMAGE_URI"
                 - sleep 40
@@ -194,10 +194,10 @@ Resources:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
-        Location: 
+        Location:
           Fn::ImportValue: !Sub "${BaseStackName}:ArtifactBucket"
         EncryptionKey:
-          Id: 
+          Id:
             Fn::ImportValue: !Sub "${BaseStackName}:KMSKey"
           Type: KMS
       Stages:
@@ -256,10 +256,10 @@ Resources:
                 Owner: AWS
                 Version: 1
                 Provider: Manual
-              Configuration: 
+              Configuration:
                 NotificationArn: !Ref SNSApproveTopic
                 CustomData: "Approve Deployment to QA"
-              RunOrder: 1      
+              RunOrder: 1
         - Name: QADeploy
           Actions:
             - Name: QADeploy
@@ -284,10 +284,10 @@ Resources:
                 Owner: AWS
                 Version: 1
                 Provider: Manual
-              Configuration: 
+              Configuration:
                 NotificationArn: !Ref SNSApproveTopic
                 CustomData: "Approve Deployment to Prod"
-              RunOrder: 1 
+              RunOrder: 1
         - Name: ProdDeploy
           Actions:
             - Name: ProdDeploy
@@ -307,12 +307,12 @@ Resources:
 
   SNSNotifyTopic:
     Type: AWS::SNS::Topic
-    Properties: 
+    Properties:
       DisplayName: "AWS-Tools"
       Subscription:
-        - 
+        -
           Endpoint: !Ref Email
-          Protocol: email 
+          Protocol: email
       TopicName: !Sub sns-${Project}-notify
 
   SNSNotifyTopicPolicy:
@@ -320,7 +320,7 @@ Resources:
     Properties:
       Topics:
         - !Ref SNSNotifyTopic
-      PolicyDocument: 
+      PolicyDocument:
         Version: 2012-10-17
         Statement:
         - Resource: !Ref SNSNotifyTopic
@@ -339,12 +339,12 @@ Resources:
 
   SNSApproveTopic:
     Type: AWS::SNS::Topic
-    Properties: 
+    Properties:
       DisplayName: "AWS-Tools"
       Subscription:
-        - 
+        -
           Endpoint: !Ref ApproverEmail
-          Protocol: email 
+          Protocol: email
       TopicName: !Sub sns-${Project}-approve
 
   SNSApproveTopicPolicy:
@@ -352,7 +352,7 @@ Resources:
     Properties:
       Topics:
         - !Ref SNSApproveTopic
-      PolicyDocument: 
+      PolicyDocument:
         Version: 2012-10-17
         Statement:
         - Resource: !Ref SNSApproveTopic
@@ -371,7 +371,7 @@ Resources:
 
   PipelineEvent:
     Type: AWS::Events::Rule
-    Properties: 
+    Properties:
       Description: "Notify on codepipeline STATE change"
       Name: !Sub "cwe-${Project}-codepipeline-event-rule"
       EventPattern:
@@ -382,7 +382,7 @@ Resources:
           detail:
               pipeline: [ !Ref Pipeline ]
 
-      State: ENABLED 
+      State: ENABLED
       Targets:
         - Arn: !Ref SNSNotifyTopic
           Id: eventTarget
@@ -396,7 +396,7 @@ Resources:
 
   BuildEvent:
     Type: AWS::Events::Rule
-    Properties: 
+    Properties:
       Description: "Notify on codepipeline STATE change"
       Name: !Sub "cwe-${Project}-codebuild-event-rule"
       EventPattern:
@@ -407,7 +407,7 @@ Resources:
           detail:
               project-name: [ !Ref CodeBuildProject ]
 
-      State: ENABLED 
+      State: ENABLED
       Targets:
         - Arn: !Ref SNSNotifyTopic
           Id: eventTarget
