@@ -20,7 +20,15 @@ Use this to create a cross account AWS Codepipeline which runs in a dedicated ac
 - Buid - AWS CodeBuild
 - Deploy - AWS Codepipeline ECS deployment
 
-![cross-account-pipeline](https://github.com/abiydv/ref-docs/blob/master/images/arch/cross-account-code-pipeline.png)
+## Architecture
+
+This is a simplified view of the solution detailing out all the components in use.
+
+![cross-account-pipeline](https://github.com/abiydv/ref-docs/blob/master/images/arch/CICD_GH.png)
+
+The various pipeline stages can be visualized as - 
+
+![pipeline-flow](https://github.com/abiydv/ref-docs/blob/master/images/arch/CICD_GH_STAGES.png)
 
 ## How to use
 To create the ECS clusters in the respective accounts, you can use the [ecs templates](../ecs/). To setup the cross account codepipeline, follow these steps - 
@@ -31,7 +39,9 @@ First up, execute the base template `codepipeline-base.yaml` to setup the Codepi
 ```
 aws cloudformation validate-template --template-body file://codepipeline-base.yaml \
 --profile aws-tools-account
+```
 
+```
 aws cloudformation create-stack --stack-name codepipeline-base-stack \ 
 --template-body file://codepipeline-base.yaml \
 --profile aws-tools-account --capabilities CAPABILITY_IAM
@@ -43,17 +53,23 @@ Next, execute the `codepipeline-access.yaml` in **ALL** the accounts you want th
 ```
 aws cloudformation validate-template --template-body file://codepipeline-access.yaml \
 --profile aws-dev-account
+```
 
+```
 aws cloudformation create-stack --stack-name codepipeline-access-stack \
 --template-body file://codepipeline-access.yaml \
 --parameters ParameterKey=KMSKeyArn,ParameterValue="KMS_KEY_ARN" \
 --profile aws-dev-account --capabilities CAPABILITY_NAMED_IAM
+```
 
+```
 aws cloudformation create-stack --stack-name codepipeline-access-stack \
 --template-body file://codepipeline-access.yaml \
 --parameters ParameterKey=KMSKeyArn,ParameterValue="KMS_KEY_ARN" \
 --profile aws-qa-account --capabilities CAPABILITY_NAMED_IAM
+```
 
+```
 aws cloudformation create-stack --stack-name codepipeline-access-stack \
 --template-body file://codepipeline-access.yaml \
 --parameters ParameterKey=KMSKeyArn,ParameterValue="KMS_KEY_ARN" \
@@ -66,7 +82,9 @@ Finally, execute the `codepipeline-stack.yaml` in the **tools** AWS account to s
 ```
 aws cloudformation validate-template --template-body file://codepipeline-stack.yaml \
 --profile aws-tools-account
+```
 
+```
 aws cloudformation create-stack --stack-name codepipeline-stack \
 --template-body file://codepipeline-stack.yaml \
 --profile aws-tools-account --capabilities CAPABILITY_IAM
